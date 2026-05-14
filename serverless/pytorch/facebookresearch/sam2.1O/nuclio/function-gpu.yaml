@@ -1,0 +1,70 @@
+metadata:
+  name: sam2-gpu
+  namespace: cvat
+  annotations:
+    name: Segment Anything 2.1
+    type: detector
+    spec: |
+      [
+        { "id": 0, "name": "Spinacia", "type": "polygon" }
+      ]
+
+spec:
+  description: segmentation with Segment-Anything 2.1 :gpu
+  runtime: 'python:3.10'
+  handler: main:handler
+  eventTimeout: 300s
+  env:
+    - name: PYTHONPATH
+      value: /opt/nuclio/sam2
+
+  build:
+    image: cvat.sam2.hiera_tiny:gpu
+    baseImage: python:3.10-slim
+
+    directives:
+      preCopy:
+        # set NVIDIA container runtime settings
+        - kind: ENV
+          value: NVIDIA_VISIBLE_DEVICES=all
+        - kind: ENV
+          value: NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+        - kind: ENV
+          value: DEBIAN_FRONTEND=noninteractive
+        - kind: WORKDIR
+          value: /opt/nuclio/sam2
+        
+        - kind: RUN
+          value: |-
+            apt-get update && apt-get -y install --no-install-recommends curl git libsm6 libxext6 && rm -rf /var/lib/apt/lists/* && \
+            pip3 install --no-cache-dir scipy pyyaml scikit-image opencv-python-headless numpy && \
+            pip3 install --no-cache-dir onnxruntime-gpu && rm -rf /root/.cache/pip
+
+        - kind: RUN
+          value: |-
+            pip3 install gdown && \
+            gdown 1pf2hE-O7CxPSuMsqo759F7Lpw6a8q3oK -O yolo1.onnx && \
+            gdown 1PJoSNuDbh24dFZxZ0Q-6E770_WQO-rde -O yolo2.onnx && \
+            gdown 11u1JQH3Av25EkhGpQ0CdcFlMoLiNFc5c -O sam2.1_hiera_tiny_encoder.onnx && \
+            gdown 1FdoPIsQTxt8GcRHGFwcHRMOdNPHtuv5g -O sam2.1_hiera_tiny_decoder.onnx && \
+            pip3 uninstall -y gdown && rm -rf /root/.cache/pip
+
+  triggers:
+    myHttpTrigger:
+      numWorkers: 1
+      kind: 'http'
+      workerAvailabilityTimeoutMilliseconds: 10000
+      attributes:
+        maxRequestBodySize: 33554432
+
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+
+  platform:
+    attributes:
+      restartPolicy:
+        name: always
+        maximumRetryCount: 3
+      mountMode: volume
